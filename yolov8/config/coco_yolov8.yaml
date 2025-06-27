@@ -1,19 +1,19 @@
 # COCO dataset configuration for YOLOv8
 dataset:
-  train_images_path: "path/to/train/images"
-  train_annotiations_path: "path/to/train/annotations.json"
-  val_images_path: "path/to/val/images"
-  val_annotations_path: "path/to/val/annotations.json"
+  train_images_path: "D:/pessoal/YOLO-MS/coco_dataset/images/train"
+  train_annotations_path: "D:/pessoal/YOLO-MS/coco_dataset/annotations/instances_train.json"
+  val_images_path: "D:/pessoal/YOLO-MS/coco_dataset/images/val"
+  val_annotations_path: "D:/pessoal/YOLO-MS/coco_dataset/annotations/instances_val.json"
 
   num_classes: 1
   class_names: ["tree"]
 
 model:
   # Define the model architecture and specifications here
-  architecture: "yolov8-n" # or "yolov8-s", "yolov8-m", "yolov8-l", "yolov8-x"
+  architecture: "n" # or "yolov8-s", "yolov8-m", "yolov8-l", "yolov8-x"
   input_size: [640, 640] # Input size for the model
 
-train:
+training:
   # Define training parameters
   batch_size: 16
   learning_rate: 0.001
@@ -69,5 +69,5 @@ testing:
   output_dir: "runs/detect/exp" # Directory to save predictions
 
 # General settings
-device: 'cuda' # or 'cpu'. Can be overwritten by script arguments
+device: "cuda" # or 'cpu'. Can be overwritten by script arguments
 workers: 4 # Number of data loading workers

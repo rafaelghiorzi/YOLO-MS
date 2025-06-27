@@ -3,10 +3,12 @@ import os
 import cv2 # For image loading, drawing, and saving
 import torch
 import torchvision.transforms as T
+from torchvision.ops import nms # Import NMS
 from PIL import Image # Alternative image loading
 import numpy as np
 import glob # For finding image files
 from typing import cast
+import json # For saving detections
 
 # Relative imports
 from yolov8.yolov8 import YOLOv8
@@ -176,22 +178,47 @@ def test(config_path, checkpoint_path, source_path, output_dir="runs/detect/exp"
 
         scores, class_indices = torch.max(pred_single[:, 4:], dim=1)
         
-        # This is where torchvision.ops.nms would be used:
-        # keep_indices = torchvision.ops.nms(boxes_xyxy_model_input_scale, scores, iou_threshold=iou_thresh_nms)
-        # For now, we use a simple confidence filter. This will result in many overlapping boxes.
-        keep_indices = torch.where(scores > conf_thresh)[0]
-        
-        if len(keep_indices) == 0:
-            print("No detections after confidence thresholding.")
-            final_boxes_abs = torch.empty(0, 4)
-            final_scores = torch.empty(0)
-            final_class_indices = torch.empty(0)
-        else:
-            final_boxes_model_scale = boxes_xyxy_model_input_scale[keep_indices]
-            final_scores = scores[keep_indices]
-            final_class_indices = class_indices[keep_indices]
+        # Apply confidence threshold
+        conf_mask = scores > conf_thresh
+        boxes_after_conf = boxes_xyxy_model_input_scale[conf_mask]
+        scores_after_conf = scores[conf_mask]
+        class_indices_after_conf = class_indices[conf_mask]
 
-            # Scale boxes from model input size (e.g., 640x640) to original image size
+        # Perform NMS per class
+        final_boxes_list = []
+        final_scores_list = []
+        final_class_indices_list = []
+
+        unique_classes = torch.unique(class_indices_after_conf)
+        for cls_idx in unique_classes:
+            cls_mask = class_indices_after_conf == cls_idx
+            cls_boxes = boxes_after_conf[cls_mask]
+            cls_scores = scores_after_conf[cls_mask]
+            
+            if cls_boxes.shape[0] == 0:
+                continue
+
+            # Apply NMS
+            keep = nms(cls_boxes, cls_scores, iou_thresh_nms)
+            
+            final_boxes_list.append(cls_boxes[keep])
+            final_scores_list.append(cls_scores[keep])
+            # Create class indices tensor for the kept boxes, filled with current cls_idx
+            final_class_indices_list.append(torch.full_like(cls_scores[keep], fill_value=cls_idx.item(), dtype=torch.long))
+
+        if not final_boxes_list: # No detections after NMS
+            print("No detections after NMS.")
+            # Create empty tensors with consistent device
+            final_boxes_model_scale = torch.empty(0, 4, device=device)
+            final_scores_tensor = torch.empty(0, device=device)
+            final_class_indices_tensor = torch.empty(0, dtype=torch.long, device=device)
+        else:
+            final_boxes_model_scale = torch.cat(final_boxes_list, dim=0)
+            final_scores_tensor = torch.cat(final_scores_list, dim=0)
+            final_class_indices_tensor = torch.cat(final_class_indices_list, dim=0)
+
+        # Scale boxes from model input size (e.g., 640x640) to original image size
+        if final_boxes_model_scale.shape[0] > 0:
             scale_x = original_w / img_w
             scale_y = original_h / img_h
             
@@ -200,27 +227,51 @@ def test(config_path, checkpoint_path, source_path, output_dir="runs/detect/exp"
             final_boxes_abs[:, 1] *= scale_y # y1
             final_boxes_abs[:, 2] *= scale_x # x2
             final_boxes_abs[:, 3] *= scale_y # y2
+        else:
+            final_boxes_abs = torch.empty(0, 4, device=device) # Ensure it's a tensor even if empty
         
-        print(f"Found {len(final_boxes_abs)} detections (after basic filtering, NMS needed).")
+        print(f"Found {final_boxes_abs.shape[0]} detections after NMS.")
 
         # Draw detections on the original OpenCV image
+        # The draw_detections function has its own confidence threshold,
+        # but since we already filtered by conf_thresh before NMS, 
+        # we can pass 0.0 to draw_detections to draw all NMS survivors.
         output_image = draw_detections(
             cv_image_orig.copy(), # Draw on a copy
             final_boxes_abs.cpu().numpy(), 
-            final_scores.cpu().numpy(), 
-            final_class_indices.cpu().numpy(),
+            final_scores_tensor.cpu().numpy(), 
+            final_class_indices_tensor.cpu().numpy(),
             class_names,
-            conf_thresh=0.0 # Apply actual threshold in draw_detections or rely on earlier filter
+            conf_thresh=0.0 # Draw all boxes that survived NMS and initial conf_thresh
         )
 
         # Save the output image
         base_filename = os.path.splitext(os.path.basename(img_path))[0]
         output_image_path = os.path.join(output_dir, f"{base_filename}_detected.jpg")
         cv2.imwrite(output_image_path, output_image)
-        print(f"Saved detection to {output_image_path}")
+        print(f"Saved visual detection to {output_image_path}")
 
-        # Optionally, save detections as text or JSON
-        # ...
+        # Save detections as JSON
+        detections_json_path = os.path.join(output_dir, f"{base_filename}_detections.json")
+        output_detections = []
+        if final_boxes_abs.shape[0] > 0:
+            for i in range(final_boxes_abs.shape[0]):
+                box = final_boxes_abs[i].cpu().tolist() # [x1, y1, x2, y2]
+                score = final_scores_tensor[i].cpu().item()
+                class_id = final_class_indices_tensor[i].cpu().item()
+                class_name = class_names[class_id] if class_id < len(class_names) else f"class_{class_id}"
+                
+                output_detections.append({
+                    'box_xyxy': [round(coord, 2) for coord in box],
+                    'score': round(score, 4),
+                    'class_id': class_id,
+                    'class_name': class_name
+                })
+        
+        with open(detections_json_path, 'w') as f:
+            json.dump(output_detections, f, indent=4)
+        print(f"Saved JSON detections to {detections_json_path}")
+
 
     print("\nTesting finished.")
 
@@ -249,5 +300,3 @@ if __name__ == '__main__':
         print(f"An unexpected error occurred during testing: {e}")
         import traceback
         traceback.print_exc()
-
-# TODO for test.py:
