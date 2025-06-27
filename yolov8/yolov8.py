@@ -1,6 +1,6 @@
-from model.yolov8_backbone import Backbone
-from model.yolov8_neck import Neck
-from model.yolov8_head import Head
+from yolov8.model.yolov8_backbone import Backbone
+from yolov8.model.yolov8_neck import Neck
+from yolov8.model.yolov8_head import Head
 from torch import nn
 
 class YOLOv8(nn.Module):

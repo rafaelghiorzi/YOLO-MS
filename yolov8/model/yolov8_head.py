@@ -65,10 +65,9 @@ Mathematical Flow:
 
 Where: w=width multiplier, r=ratio multiplier, B=batch size
 """
-from yolov8_utils import Conv, DFL ,yolo_params
+from yolov8.yolov8_utils import Conv, DFL ,yolo_params
 import torch
 from torch import nn
-from yolov8_backbone import Backbone
 
 class Head(nn.Module):
     def __init__(self, version, ch=16, num_classes=80) -> None:
@@ -133,7 +132,7 @@ class Head(nn.Module):
         # split out predictions for box and cls
         #           box=[bs,4×self.ch,sum_i(h[i]w[i])]
         #           cls=[bs,self.nc,sum_i(h[i]w[i])]
-        box, cls = x.split(split_size=(4 * self.ch, self.nc), dim=1)
+        box, cls = x.split(split_size=(4 * self.ch, self.num_classes), dim=1)
 
 
         a, b = self.dfl(box).chunk(2, 1)  # a=b=[bs,2×self.ch,sum_i(h[i]w[i])]

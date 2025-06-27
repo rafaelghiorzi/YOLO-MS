@@ -48,10 +48,9 @@ Benefits:
 
 Where: w=width multiplier, r=ratio multiplier, B=batch size
 """
-from yolov8_utils import Conv, C2f, Upsample, yolo_params
+from yolov8.yolov8_utils import Conv, C2f, Upsample, yolo_params
 import torch
 from torch import nn
-from yolov8_backbone import Backbone
 class Neck(nn.Module):
     def __init__(self, version):
         super().__init__()
