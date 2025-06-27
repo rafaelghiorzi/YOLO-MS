@@ -65,7 +65,7 @@ Mathematical Flow:
 
 Where: w=width multiplier, r=ratio multiplier, B=batch size
 """
-from yolov8.yolov8_utils import Conv, DFL ,yolo_params
+from yolov8.model.components import Conv, DFL ,yolo_params
 import torch
 from torch import nn
 
@@ -140,7 +140,8 @@ class Head(nn.Module):
         b = anchors.unsqueeze(0) + b
         box = torch.cat(tensors=((a + b) / 2, b - a), dim=1)
         
-        return torch.cat(tensors=(box * strides, cls.sigmoid()), dim=1)
+        output = torch.cat(tensors=(box * strides, cls.sigmoid()), dim=1)
+        return output.transpose(1, 2)  # [B, 84, 8400] → [B, 8400, 84]
 
     def make_anchors(self, x, stride, offset=0.5):
         # Return a list of anchor centers and strides for each feature map
@@ -151,7 +152,7 @@ class Head(nn.Module):
             _, _, h, w = x[i].shape
             sx = torch.arange(end=w, device=device, dtype=dtype) + offset  # x coordinates of anchor centers
             sy = torch.arange(end=h, device=device, dtype=dtype) + offset  # y coordinates of anchor centers
-            sy, sx = torch.meshgrid(sy, sx)                                # all anchor centers 
+            sy, sx = torch.meshgrid(sy, sx, indexing='ij')                                # all anchor centers 
             anchor_tensor.append(torch.stack((sx, sy), -1).view(-1, 2))
             stride_tensor.append(torch.full((h * w, 1), stride, dtype=dtype, device=device))
         return torch.cat(anchor_tensor), torch.cat(stride_tensor)

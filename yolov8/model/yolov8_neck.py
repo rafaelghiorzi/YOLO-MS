@@ -48,7 +48,7 @@ Benefits:
 
 Where: w=width multiplier, r=ratio multiplier, B=batch size
 """
-from yolov8.yolov8_utils import Conv, C2f, Upsample, yolo_params
+from yolov8.model.components import Conv, C2f, Upsample, yolo_params
 import torch
 from torch import nn
 class Neck(nn.Module):

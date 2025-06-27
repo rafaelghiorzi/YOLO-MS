@@ -1,0 +1,73 @@
+# COCO dataset configuration for YOLOv8
+dataset:
+  train_images_path: "path/to/train/images"
+  train_annotiations_path: "path/to/train/annotations.json"
+  val_images_path: "path/to/val/images"
+  val_annotations_path: "path/to/val/annotations.json"
+
+  num_classes: 1
+  class_names: ["tree"]
+
+model:
+  # Define the model architecture and specifications here
+  architecture: "yolov8-n" # or "yolov8-s", "yolov8-m", "yolov8-l", "yolov8-x"
+  input_size: [640, 640] # Input size for the model
+
+train:
+  # Define training parameters
+  batch_size: 16
+  learning_rate: 0.001
+  optimizer: "adam" # or "sgd"
+  adam_betas: [0.9, 0.999]
+  sgd_momentum: 0.937
+  sgd_nesterov: True
+  weight_decay: 0.0005
+  epochs: 100
+
+  # Learning rate scheduler
+  scheduler:
+    type: "cosine" # 'cosine', 'step', 'linear', 'none'
+    step_lr_size: 30 # For step scheduler
+    step_lr_gamma: 0.1 # For step scheduler
+    cosine_t_max: 100 # For cosine scheduler
+    cosine_eta_min: 0.00001 # For cosine scheduler
+
+  checkpoint_dir: "runs/train/exp/weights"
+  save_period: 10 # Save every 10 epochs
+  log_dir: "runs/train/exp"
+  seed: 42
+
+  augmentation:
+    hsv_h: 0.015 # Hue saturation value augmentation
+    hsv_s: 0.7
+    hsv_v: 0.4
+    degrees: 0.0 # Rotation
+    translate: 0.1
+    scale: 0.5
+    shear: 0.0
+    perspective: 0.0
+    flipud: 0.0 # Flip up-down
+    fliplr: 0.5 # Flip left-right
+    mosaic: 1.0 # Mosaic augmentation (requires special handling in dataset/dataloader)
+    mixup: 0.0 # Mixup augmentation
+
+evaluation:
+  # Define the evaluation parameters
+  batch_size: 32
+  img_size: [640, 640] # Input size for evaluation
+  iou_threshold: 0.5 # IoU threshold for Non-Maximum Suppression (NMS)
+  confidence_threshold: 0.25 # Confidence threshold for detections
+
+# Test/Prediction Configuration
+testing:
+  # Define the testing parameters
+  img_size: [640, 640] # Input size for testing
+  iou_threshold: 0.5 # IoU threshold for NMS
+  confidence_threshold: 0.25 # Confidence threshold for detections
+  source: "path/to/test/images or video" # or '0' for webcam
+  save_predictions: True # Save predictions to disk
+  output_dir: "runs/detect/exp" # Directory to save predictions
+
+# General settings
+device: 'cuda' # or 'cpu'. Can be overwritten by script arguments
+workers: 4 # Number of data loading workers

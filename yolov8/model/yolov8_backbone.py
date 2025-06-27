@@ -24,7 +24,7 @@ Model Variants (depth, width, ratio):
 
 Where: w=width multiplier, r=ratio multiplier, B=batch size
 """
-from yolov8.yolov8_utils import Conv, C2f, SPPF, yolo_params
+from yolov8.model.components import Conv, C2f, SPPF, yolo_params
 from torch import nn
   
 class Backbone(nn.Module):

@@ -197,7 +197,7 @@ def analyze_complete_model(image_path, version='n', test_training_mode=True):
     head = Head(version=version)
     
     # Also create complete model
-    complete_model = YOLOv8(version=version)
+    complete_model = YOLOv8(version=version, num_classes=80, dfl_ch=16)
     
     print(f"📊 Model Statistics:")
     total_params = sum(p.numel() for p in complete_model.parameters()) / 1e6
