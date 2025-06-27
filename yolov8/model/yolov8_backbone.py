@@ -24,28 +24,9 @@ Model Variants (depth, width, ratio):
 
 Where: w=width multiplier, r=ratio multiplier, B=batch size
 """
-from yolov8_utils import Conv, C2f, SPPF
-import torch
+from yolov8_utils import Conv, C2f, SPPF, yolo_params
 from torch import nn
-
-def yolo_params(version):
-    """
-    Returns the parameters for the YOLOv8 model based on the version.
-    return depth,width,ratio based on the version
-    """
-    if version == 'n':
-        return 1/3, 1/4, 2.0
-    elif version == 's':
-        return 1/3, 1/2, 2.0
-    elif version == 'm':
-        return 2/3, 3/4, 1.5
-    elif version == 'l':
-        return 1.0, 1.0, 1.0
-    elif version == 'x':
-        return 1.0, 1.25, 1.0
-    else:
-        raise ValueError(f"Unknown YOLOv8 version: {version}")
-    
+  
 class Backbone(nn.Module):
     """
     Backbone of the YOLOv8 model.
@@ -91,18 +72,3 @@ class Backbone(nn.Module):
         out3 = self.sppf(x)
 
         return out1, out2, out3
-    
-print("NANO MODEL")
-backbone_nano = Backbone(version='n')
-print(f"{sum(p.numel() for p in backbone_nano.parameters()) / 1e6} million parameters")
-
-print("SMALL MODEL")
-backbone_small = Backbone(version='s')
-print(f"{sum(p.numel() for p in backbone_small.parameters()) / 1e6} million parameters")
-
-# Sanity check
-x = torch.randn(1, 3, 640, 640)  # Dummy input
-out1, out2, out3 = backbone_nano(x)
-print(f"Input shape: {x.shape}, Output shapes: {out1.shape}, {out2.shape}, {out3.shape}")
-
-

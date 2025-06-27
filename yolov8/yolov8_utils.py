@@ -24,6 +24,19 @@ SPPF: Spatial Pyramid Pooling - Fast
     - Uses sequential max pooling instead of parallel (faster than SPP)
     - Aggregates features at different receptive field sizes
 
+Upsample: Nearest neighbor upsampling
+    - Upscales feature maps by a specified scale factor
+    - Used for feature map resizing in the neck and head
+
+yolo_params: Function to get YOLOv8 model parameters based on version
+    - Returns depth, width, and ratio multipliers for different model sizes
+    - Supports 'n' (Nano), 's' (Small), 'm' (Medium), 'l' (Large), 'x' (Extra)
+    - Helps in configuring the model architecture dynamically
+
+DFL: Distribution Focal Loss
+    - Considers the predicted bbox coordinates as a probability distribution
+    - At inference, it samples from the distribution to get refined coordinates.
+
 Key Features:
 - All components preserve or enhance feature representation
 - Designed for efficient inference and training
@@ -41,6 +54,12 @@ Usage:
     
     # Multi-scale pooling
     sppf = SPPF(512, 512, kernel_size=5)
+
+    # Upsampling feature maps
+    upsample = Upsample(scale_factor=2, mode='nearest')
+
+    # Yolo Parameters
+    depth, width, ratio = yolo_params('n')  # Get parameters for YOLOv8-Nano
 """
 
 import torch
@@ -124,24 +143,67 @@ class SPPF(nn.Module):
         x2 = self.m(x1)
         x3 = self.m(x2)
         # Concatenate the pooled values
-        y = torch.cat((x, x1, x2, x3), dim=1)
+        y = torch.cat([x, x1, x2, x3], dim=1)
 
         # Final Conv layer
         y = self.conv2(y)
         return y
 
-# Sanity check
-c2f = C2f(in_channels=64, out_channels=128, num_bottlenecks=2)
-print(f"{sum(p.numel() for p in c2f.parameters()) / 1e6} million parameters")
+# Upsample: nearest neighbor interpolation with scale factor
+class Upsample(nn.Module):
+    def __init__(self, scale_factor=2, mode='nearest') -> None:
+        super().__init__()
+        self.scale_factor = scale_factor
+        self.mode = mode
 
-dummy_input = torch.randn(1, 64, 244, 244)
-dummy_output = c2f(dummy_input)
-print(f"Input shape: {dummy_input.shape}, Output shape: {dummy_output.shape}")
+    def forward(self, x):
+        return nn.functional.interpolate(x, scale_factor=self.scale_factor, mode=self.mode)
 
-# Sanity check for SPPF
-sppf = SPPF(in_channels=128, out_channels=512)
-print(f"{sum(p.numel() for p in sppf.parameters()) / 1e6} million parameters")
+class DFL(nn.Module):
+    def __init__(self, ch=16) -> None:
+        super().__init__()
+        self.ch = ch
 
-dummy_input = torch.randn(1, 128, 244, 244)
-dummy_output = sppf(dummy_input)
-print(f"Input shape: {dummy_input.shape}, Output shape: {dummy_output.shape}")
+        self.conv = nn.Conv2d(in_channels=ch, out_channels=1, kernel_size=1, bias=False).requires_grad_(False)
+
+        # Initialize conv with [0, ..., ch-1]
+        x = torch.arange(ch, dtype=torch.float).view(1, ch, 1, 1)
+        self.conv.weight.data[:] = torch.nn.Parameter(x)
+
+    def forward(self, x):
+        """
+        Forward pass of the Distribution Focal Loss (DFL).
+        x: Input tensor with shape [B, ch * 4, A]
+        - B: Batch size
+        - ch: Number of channels (e.g., 16)
+        - A: Number of anchors (e.g., 80x80 grid)
+        Returns:
+        - Output tensor with shape [B, 4, A]
+        """
+
+        # x must have num_channels = ch * 4
+        b, c, a = x.shape
+        x = x.view(b, 4, self.ch, a).transpose(1, 2)
+
+        # Take softmax on channel dimension
+        x = x.softmax(dim=1)
+        x = self.conv(x)
+        return x.view(b, 4, a)
+
+def yolo_params(version):
+    """
+    Returns the parameters for the YOLOv8 model based on the version.
+    return depth,width,ratio based on the version
+    """
+    if version == 'n':
+        return 1/3, 1/4, 2.0
+    elif version == 's':
+        return 1/3, 1/2, 2.0
+    elif version == 'm':
+        return 2/3, 3/4, 1.5
+    elif version == 'l':
+        return 1.0, 1.0, 1.0
+    elif version == 'x':
+        return 1.0, 1.25, 1.0
+    else:
+        raise ValueError(f"Unknown YOLOv8 version: {version}")

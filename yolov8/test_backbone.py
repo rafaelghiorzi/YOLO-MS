@@ -4,12 +4,12 @@ Visualize YOLOv8 Backbone Feature Maps
 This script loads a real image, passes it through the YOLOv8 backbone,
 and visualizes the feature maps at different scales.
 """
+from typing import cast
 import torch
-import torchvision.transforms as transforms
+from torchvision import transforms
 from PIL import Image
 import matplotlib.pyplot as plt
-import numpy as np
-from yolov8_backbone import Backbone
+from model.yolov8_backbone import Backbone
 
 def load_and_preprocess_image(image_path, size=640):
     """Load and preprocess image for YOLOv8 backbone"""
@@ -25,7 +25,7 @@ def load_and_preprocess_image(image_path, size=640):
     ])
     
     # Apply transforms and add batch dimension
-    tensor = transform(image)
+    tensor = cast(torch.Tensor, transform(image))
     tensor = tensor.unsqueeze(0)
     return tensor, image
 
