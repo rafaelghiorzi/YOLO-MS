@@ -1,7 +1,7 @@
 import argparse
 import os
 import time
-import yaml # Already imported but good to ensure
+import yaml
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -10,18 +10,16 @@ import torchvision.transforms as T # For basic transforms
 # Relative imports from the yolov8 package
 from yolov8.tools.dataset import COCODataset
 from yolov8.yolov8 import YOLOv8
-from yolov8.tools.utils import load_config, get_optimizer, get_scheduler
-from yolov8.tools.loss import ComputeLoss, bbox_iou # Import bbox_iou for potential use in validation
+from yolov8.tools.utils import load_config, get_optimizer, get_scheduler, load_pretrained_weights, freeze_layers
+from yolov8.tools.simplified_loss import SimplifiedYOLOLoss, bbox_iou # Use simplified loss
 from torchvision.ops import nms # For NMS in validation
 from torch.utils.tensorboard import SummaryWriter # For TensorBoard logging
-
-# Placeholder for evaluation metrics
-# from yolov8.metrics import MeanAveragePrecision # Or similar
+from torchmetrics.detection import MeanAveragePrecision # For proper mAP calculation
 
 @torch.no_grad() # Decorator for functions that don't need gradient calculation
 def validate_epoch(model, val_loader, device, cfg, epoch_num=-1):
     """
-    Validates the model on the validation set for one epoch.
+    Validates the model on the validation set for one epoch using proper mAP calculation.
     Args:
         model: The YOLOv8 model.
         val_loader: DataLoader for the validation set.
@@ -29,8 +27,7 @@ def validate_epoch(model, val_loader, device, cfg, epoch_num=-1):
         cfg: Configuration dictionary.
         epoch_num (int): Current epoch number, for logging.
     Returns:
-        (float): Placeholder for mAP or other primary validation metric.
-                 Currently returns average number of detections per image.
+        (float): mAP@0.5 value
     """
     print(f"\n--- Validating Epoch {epoch_num if epoch_num > 0 else ''} ---")
     model.eval() # Set model to evaluation mode
@@ -40,23 +37,29 @@ def validate_epoch(model, val_loader, device, cfg, epoch_num=-1):
     iou_thresh_nms = eval_cfg.get('iou_threshold', 0.45) # NMS IoU threshold
     model_input_h, model_input_w = cfg['model'].get('input_size', [640, 640])
 
-    all_predictions = [] # To store predictions for mAP calculation
-    all_targets = []     # To store ground truths for mAP calculation
+    # Initialize mAP metric using torchmetrics
+    map_metric = MeanAveragePrecision(
+        box_format='xyxy',
+        iou_type='bbox',
+        iou_thresholds=[0.5],  # mAP@0.5
+        compute_on_step=False,
+        sync_on_compute=True
+    ).to(device)
     
     total_detections = 0
     num_images_processed = 0
 
     for batch_idx, (images, targets) in enumerate(val_loader):
         images = images.to(device)
-        # Targets are [batch_img_idx, class_label, x_center_norm, y_center_norm, w_norm, h_norm]
-        # We need to prepare targets per image for matching with predictions later.
-        
         batch_size = images.shape[0]
         num_images_processed += batch_size
 
         raw_predictions = model(images) # Output: [B, num_preds, 4_coords + num_classes]
 
         # Process predictions for each image in the batch
+        batch_predictions = []
+        batch_targets = []
+        
         for i in range(batch_size):
             pred_single = raw_predictions[i] # [num_preds, 4_coords + num_classes]
             
@@ -102,17 +105,14 @@ def validate_epoch(model, val_loader, device, cfg, epoch_num=-1):
                 img_final_scores = torch.empty(0, device=device)
                 img_final_labels = torch.empty(0, dtype=torch.long, device=device)
 
-            # Store predictions for this image (for mAP)
-            # Format: dict with 'boxes', 'scores', 'labels' (all tensors)
-            # Boxes should be in xyxy format, absolute pixel coords (model input scale)
-            all_predictions.append({
-                'boxes': img_final_boxes, # Already xyxy, model input scale
+            # Store predictions for mAP calculation
+            batch_predictions.append({
+                'boxes': img_final_boxes,
                 'scores': img_final_scores,
                 'labels': img_final_labels
             })
 
-            # Store ground truths for this image (for mAP)
-            # Targets are normalized [cls, cx, cy, w, h]. Convert to xyxy absolute pixel coords.
+            # Store ground truths for mAP calculation
             gt_for_img_mask = targets[:, 0] == i
             gt_for_img_norm = targets[gt_for_img_mask][:, 1:] # [cls, cx, cy, w, h] normalized
             
@@ -137,39 +137,32 @@ def validate_epoch(model, val_loader, device, cfg, epoch_num=-1):
                 gt_boxes_xyxy_abs = torch.stack([gt_x1_abs, gt_y1_abs, gt_x2_abs, gt_y2_abs], dim=1)
                 gt_labels_abs = gt_cls
 
-            all_targets.append({
-                'boxes': gt_boxes_xyxy_abs, # xyxy, model input scale
+            batch_targets.append({
+                'boxes': gt_boxes_xyxy_abs,
                 'labels': gt_labels_abs
             })
             
-        if (batch_idx + 1) % 10 == 0 :
+        # Update mAP metric
+        map_metric.update(batch_predictions, batch_targets)
+            
+        if (batch_idx + 1) % 10 == 0:
              print(f"  Validated batch {batch_idx+1}/{len(val_loader)}")
 
-    # --- mAP Calculation Placeholder ---
-    # A full mAP calculation is complex. For now, this is a placeholder.
-    # It would involve:
-    # 1. For each class:
-    #    a. Collect all predicted boxes, scores for that class.
-    #    b. Collect all GT boxes for that class.
-    #    c. Match predictions to GTs based on IoU threshold (e.g., 0.5).
-    #    d. Calculate precision-recall curve.
-    #    e. Calculate Average Precision (AP) for the class.
-    # 2. mAP is the mean of APs over all classes.
-    # Libraries like `torchmetrics.detection.MeanAveragePrecision` can do this.
+    # Compute final mAP
+    map_results = map_metric.compute()
+    map_50 = map_results['map_50'].item() if 'map_50' in map_results else map_results['map'].item()
     
-    # Placeholder metric: average number of detections per image
+    # Average detections per image (for additional info)
     avg_detections_per_image = total_detections / num_images_processed if num_images_processed > 0 else 0.0
-    map_placeholder = avg_detections_per_image # Replace with actual mAP later
 
     print(f"--- Validation Summary ---")
     print(f"Processed {num_images_processed} images.")
     print(f"Total Detections (after NMS & conf_thresh): {total_detections}")
     print(f"Average Detections per Image: {avg_detections_per_image:.2f}")
-    print(f"mAP (Placeholder - using avg detections): {map_placeholder:.4f}")
-    print(f"TODO: Implement proper mAP calculation using 'all_predictions' and 'all_targets'.")
+    print(f"mAP@0.5: {map_50:.4f}")
     
     model.train() # Set model back to training mode
-    return map_placeholder # Return the main metric
+    return map_50
 
 def train(config_path):
     """
@@ -193,7 +186,6 @@ def train(config_path):
     torch.manual_seed(seed)
     if device_str == 'cuda':
         torch.cuda.manual_seed(seed)
-    # np.random.seed(seed) # If using numpy for augmentations not handled by torch
 
     # Directories for output
     exp_name = cfg['training'].get('experiment_name', 'exp')
@@ -292,6 +284,16 @@ def train(config_path):
     else:
         print("No pretrained weights specified. Training from scratch.")
 
+    # Add fine-tuning support - load additional pretrained weights if specified
+    pretrained_path = cfg['training'].get('pretrained_weights', None)
+    if pretrained_path:
+        model = load_pretrained_weights(model, pretrained_path, strict=False)
+    
+    # Add layer freezing for fine-tuning
+    freeze_layers_patterns = cfg['training'].get('freeze_layers', [])
+    if freeze_layers_patterns:
+        model = freeze_layers(model, freeze_layers_patterns)
+
 
     # Ensure model head has correct strides (critical for loss calculation and anchor generation)
     default_strides = [8., 16., 32.] # TODO: Get this from config if possible
@@ -316,21 +318,17 @@ def train(config_path):
     print("Initializing Loss Function...")
     loss_cfg = cfg.get('loss', {}) 
     
-    # Determine DFL channels (reg_max in YOLOv8 context often means dfl_channels)
-    # Head's `self.ch` is DFL channels.
-    dfl_ch_from_head = getattr(getattr(model, 'head', None), 'ch', 16) 
-    
-    criterion = ComputeLoss(
-        model_head=getattr(model, 'head', None), 
+    criterion = SimplifiedYOLOLoss(
         num_classes=dataset_cfg['num_classes'],
         device=device,
-        img_size=(img_h, img_w), 
-        strides=default_strides, # Pass strides explicitly
-        dfl_ch=dfl_ch_from_head, 
-        reg_max=dfl_ch_from_head, # reg_max for DFL, typically same as dfl_ch
-        iou_type=loss_cfg.get('iou_type', 'ciou'),
+        img_size=(img_h, img_w),
+        strides=default_strides,
+        alpha=loss_cfg.get('alpha', 0.25),
+        gamma=loss_cfg.get('gamma', 1.5),
+        box_weight=loss_cfg.get('box_weight', 7.5),
+        cls_weight=loss_cfg.get('cls_weight', 0.5)
     )
-    print(f"Loss function initialized with img_size=({img_h},{img_w}), strides={default_strides}, dfl_ch={dfl_ch_from_head}.")
+    print(f"Simplified Loss function initialized with img_size=({img_h},{img_w}), strides={default_strides}.")
     
     # --- 7. Training Loop ---
     epochs = cfg['training']['epochs']
@@ -405,15 +403,15 @@ def train(config_path):
         # --- 8. Validation ---
         if (epoch + 1) % cfg['training'].get('val_interval', 1) == 0 and val_loader:
             val_metric = validate_epoch(model, val_loader, device, cfg, epoch_num=epoch + 1)
-            print(f"Epoch {epoch+1} Validation Metric (Placeholder mAP): {val_metric:.4f}")
-            if tb_writer: tb_writer.add_scalar('Validation/mAP_Placeholder', val_metric, epoch)
+            print(f"Epoch {epoch+1} Validation mAP@0.5: {val_metric:.4f}")
+            if tb_writer: tb_writer.add_scalar('Validation/mAP_50', val_metric, epoch)
 
             # Save best model based on validation metric
             if val_metric > best_val_metric: # Assuming higher is better for mAP
                 best_val_metric = val_metric
                 best_checkpoint_path = os.path.join(weights_dir, 'best.pt')
                 torch.save(model.state_dict(), best_checkpoint_path)
-                print(f"Saved new best model to {best_checkpoint_path} (Metric: {best_val_metric:.4f})")
+                print(f"Saved new best model to {best_checkpoint_path} (mAP@0.5: {best_val_metric:.4f})")
         
         # --- 9. Save Checkpoints ---
         # Save epoch checkpoint

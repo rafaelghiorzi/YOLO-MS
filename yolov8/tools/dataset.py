@@ -144,7 +144,7 @@ class COCODataset(Dataset):
         if torch.is_tensor(idx):
             idx = idx.item()
         if not isinstance(idx, int):
-            raise TypeError(f"Index should be an integer, got {type(idx)} instead.")
+            raise TypeError(f"Index should be an integer, got {type(idx).__name__} instead.")
 
         img_id = self.image_ids[idx]
         img_info = self.coco.loadImgs(img_id)[0]

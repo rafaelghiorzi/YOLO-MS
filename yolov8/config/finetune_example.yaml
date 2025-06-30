@@ -1,0 +1,78 @@
+# Fine-tuning configuration example for YOLOv8
+dataset:
+  train_images_path: "path/to/your/train/images"
+  train_annotations_path: "path/to/your/train/annotations.json"
+  val_images_path: "path/to/your/val/images"
+  val_annotations_path: "path/to/your/val/annotations.json"
+
+  num_classes: 10 # Your custom number of classes
+  class_names: ["class1", "class2", "class3", "etc"]
+
+model:
+  architecture: "n" # or "s", "m", "l", "x"
+  input_size: [640, 640]
+  pretrained_weights_path: null # Leave null to train from scratch
+
+training:
+  # Fine-tuning specific settings
+  pretrained_weights: "path/to/pretrained/yolov8n.pt" # Path to pretrained YOLO weights
+  freeze_layers: ["backbone.conv1", "backbone.layer1"] # Freeze early layers for fine-tuning
+
+  batch_size: 8 # Smaller batch size for fine-tuning
+  learning_rate: 0.0001 # Lower learning rate for fine-tuning
+  optimizer: "adam"
+  weight_decay: 0.0005
+  epochs: 50 # Fewer epochs for fine-tuning
+  val_interval: 2 # Validate every 2 epochs
+  experiment_name: "finetune_exp"
+
+  # Learning rate scheduler - use step for fine-tuning
+  scheduler:
+    type: "step"
+    step_lr_size: 20
+    step_lr_gamma: 0.1
+
+  checkpoint_dir: "runs/finetune/exp/weights"
+  save_period: 5
+  log_dir: "runs/finetune"
+  seed: 42
+
+  # Lighter augmentations for fine-tuning
+  augmentation:
+    hsv_h: 0.01
+    hsv_s: 0.5
+    hsv_v: 0.3
+    degrees: 5.0
+    translate: 0.05
+    scale: 0.3
+    shear: 0.0
+    perspective: 0.0
+    flipud: 0.0
+    fliplr: 0.5
+    mosaic: 0.5 # Reduced mosaic
+    mixup: 0.0
+
+# Loss function configuration - adjusted for fine-tuning
+loss:
+  alpha: 0.25
+  gamma: 1.5
+  box_weight: 5.0 # Slightly lower box weight
+  cls_weight: 1.0 # Higher classification weight for fine-tuning
+
+evaluation:
+  batch_size: 16
+  img_size: [640, 640]
+  iou_threshold: 0.5
+  confidence_threshold: 0.25
+
+testing:
+  img_size: [640, 640]
+  iou_threshold: 0.5
+  confidence_threshold: 0.25
+  source: "path/to/test/images"
+  save_predictions: True
+  output_dir: "runs/detect/finetune_exp"
+
+# General settings
+device: "cuda" # or "cpu"
+workers: 4 # Number of data loading workers

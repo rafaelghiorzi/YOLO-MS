@@ -15,6 +15,8 @@ model:
 
 training:
   # Define training parameters
+  pretrained_weights: null # Path to additional pretrained weights for fine-tuning
+  freeze_layers: [] # Patterns of layer names to freeze, e.g., ["backbone", "neck.conv1"]
   batch_size: 16
   learning_rate: 0.001
   optimizer: "adam" # or "sgd"
@@ -23,6 +25,8 @@ training:
   sgd_nesterov: True
   weight_decay: 0.0005
   epochs: 100
+  val_interval: 1 # Validate every N epochs
+  experiment_name: "yolo_ms_exp"
 
   # Learning rate scheduler
   scheduler:
@@ -69,5 +73,12 @@ testing:
   output_dir: "runs/detect/exp" # Directory to save predictions
 
 # General settings
-device: "cuda" # or 'cpu'. Can be overwritten by script arguments
+device: "cpu" # or 'cpu'. Can be overwritten by script arguments
 workers: 4 # Number of data loading workers
+
+# Loss function configuration
+loss:
+  alpha: 0.25 # Focal loss alpha parameter
+  gamma: 1.5 # Focal loss gamma parameter
+  box_weight: 7.5 # Weight for box regression loss
+  cls_weight: 0.5 # Weight for classification loss

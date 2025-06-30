@@ -1,5 +1,6 @@
 import torch
 import yaml
+import os
 
 def load_config(config_path):
     """Loads a YAML configuration file."""
@@ -40,3 +41,54 @@ def get_scheduler(optimizer, config):
         return None
     else:
         raise ValueError(f"Unsupported scheduler: {scheduler_type}")
+
+def load_pretrained_weights(model, pretrained_path, strict=False):
+    """Load pretrained weights with proper error handling."""
+    if not pretrained_path or not os.path.exists(pretrained_path):
+        print("No pretrained weights found, training from scratch")
+        return model
+    
+    try:
+        checkpoint = torch.load(pretrained_path, map_location='cpu')
+        
+        # Handle different checkpoint formats
+        if isinstance(checkpoint, dict):
+            if 'model' in checkpoint:
+                state_dict = checkpoint['model']
+            elif 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                state_dict = checkpoint
+        else:
+            state_dict = checkpoint
+        
+        # Remove 'module.' prefix if present (from DataParallel)
+        if any(k.startswith('module.') for k in state_dict.keys()):
+            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+        
+        missing, unexpected = model.load_state_dict(state_dict, strict=strict)
+        
+        if missing:
+            print(f"Missing keys: {missing}")
+        if unexpected:
+            print(f"Unexpected keys: {unexpected}")
+            
+        print(f"Successfully loaded pretrained weights from {pretrained_path}")
+        
+    except Exception as e:
+        print(f"Error loading pretrained weights: {e}")
+        print("Training from scratch")
+    
+    return model
+
+def freeze_layers(model, freeze_patterns):
+    """Freeze specific layers based on name patterns."""
+    frozen_count = 0
+    for name, param in model.named_parameters():
+        if any(pattern in name for pattern in freeze_patterns):
+            param.requires_grad = False
+            frozen_count += 1
+            print(f"Frozen: {name}")
+    
+    print(f"Frozen {frozen_count} parameters")
+    return model

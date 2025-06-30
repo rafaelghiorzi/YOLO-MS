@@ -62,3 +62,72 @@
 4.  Add support for loading pretrained weights.
 5.  Add Tensorboard or other logging for metrics.
 6.  Refine error handling and add more verbose logging where needed.
+
+# Comparing YOLOv8 with YOLO-MS
+
+```bash
+Input Image (640x640x3)
+        │                                      │
+        ▼                                      ▼
+
++-------------------------+         +----------------------------+
+|      YOLOv8 Backbone    |         |       YOLO-MS Backbone     |
+|-------------------------|         |----------------------------|
+| Conv -> Conv            |         | Conv -> Conv               |
+|    ↓                    |         |    ↓                       |
+| C2f -> out1             |         | MSBlock -> out1            |
+|    ↓                    |         |    ↓                       |
+| Conv -> C2f -> out2     |         | Conv -> MSBlock -> out2    |
+|    ↓                    |         |    ↓                       |
+| Conv -> C2f             |         | Conv -> MSBlock            |
+|    ↓                    |         |    ↓                       |
+| SPPF -> out3            |         | MS-SPPF -> out3            |
++-------------------------+         +----------------------------+
+
+        │                                      │
+        ▼                                      ▼
+
++-------------------------+         +----------------------------+
+|         YOLOv8 Neck     |         |         YOLO-MS Neck       |
+|-------------------------|         |----------------------------|
+| Upsample(out3)          |         | Upsample(out3)             |
+| ↓                       |         | ↓                          |
+| Concat(out2)            |         | MSFusion(out2)             |
+| ↓                       |         | ↓                          |
+| C2f -> out4             |         | MSBlock -> out4            |
+| ↓                       |         | ↓                          |
+| Upsample                |         | Upsample                   |
+| ↓                       |         | ↓                          |
+| Concat(out1)            |         | MSFusion(out1)             |
+| ↓                       |         | ↓                          |
+| C2f -> final_out1       |         | MSBlock -> final_out1      |
+| ↓                       |         | ↓                          |
+| Conv                    |         | Conv                       |
+| ↓                       |         | ↓                          |
+| Concat(out4)            |         | MSFusion(out4)             |
+| ↓                       |         | ↓                          |
+| C2f -> final_out2       |         | MSBlock -> final_out2      |
+| ↓                       |         | ↓                          |
+| Conv                    |         | Conv                       |
+| ↓                       |         | ↓                          |
+| Concat(out3)            |         | MSFusion(out3)             |
+| ↓                       |         | ↓                          |
+| C2f -> final_out3       |         | MSBlock -> final_out3      |
++-------------------------+         +----------------------------+
+
+        │                                      │
+        ▼                                      ▼
+
++-------------------------+         +----------------------------+
+|        YOLOv8 Head      |         |         YOLO-MS Head       |
+|-------------------------|         |----------------------------|
+| Final_out1 → P3 (80x80) |         | final_out1 → P3 (80x80)    |
+| Final_out2 → P4 (40x40) |         | final_out2 → P4 (40x40)    |
+| Final_out3 → P5 (20x20) |         | final_out3 → P5 (20x20)    |
+|                         |         | (Possível uso de MSBlock)  |
+| Output: [B, 8400, 4+C]  |         | Output: [B, 8400, 4+C]     |
++-------------------------+         +----------------------------+
+
+                         ▼
+                  Final Detections
+```
